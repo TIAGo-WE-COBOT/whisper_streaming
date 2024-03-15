@@ -4,8 +4,8 @@ import numpy as np
 import librosa  
 from functools import lru_cache
 import time
-
-
+import rospy
+from std_msgs.msg import String
 
 @lru_cache
 def load_audio(fname):
@@ -34,7 +34,6 @@ class ASRBase:
 
         self.model = self.load_model(modelsize, cache_dir, model_dir)
 
-
     def load_model(self, modelsize, cache_dir):
         raise NotImplemented("must be implemented in the child class")
 
@@ -61,6 +60,15 @@ class WhisperTimestampedASR(ASRBase):
         return whisper.load_model(modelsize, download_root=cache_dir)
 
     def transcribe(self, audio, init_prompt=""):
+        if self.use_vad_flag:
+            # Se il VAD è abilitato, utilizza il VAD per filtrare i segmenti di silenzio durante la trascrizione
+            self.transcribe_kargs["vad"] = True
+            print("VAD_USED")
+        else:
+            # Altrimenti, disabilita il VAD durante la trascrizione
+            self.transcribe_kargs["vad"] = False
+            print("VAD_NOT_USED")
+
         result = self.transcribe_timestamped(self.model,
                 audio, language=self.original_language,
                 initial_prompt=init_prompt, verbose=None,
@@ -81,6 +89,8 @@ class WhisperTimestampedASR(ASRBase):
 
     def use_vad(self):
         self.transcribe_kargs["vad"] = True
+        self.use_vad_flag = True
+
 
     def set_translate_task(self):
         self.transcribe_kargs["task"] = "translate"
@@ -106,17 +116,18 @@ class FasterWhisperASR(ASRBase):
 
 
         # this worked fast and reliably on NVIDIA L40
-        model = WhisperModel(model_size_or_path, device="cuda", compute_type="float16", download_root=cache_dir)
+        #model = WhisperModel(model_size_or_path, device="cuda", compute_type="float16", download_root=cache_dir)
+        #model = WhisperModel(model_size_or_path, device="cuda", compute_type="int8", download_root=cache_dir)
 
         # or run on GPU with INT8
         # tested: the transcripts were different, probably worse than with FP16, and it was slightly (appx 20%) slower
-        #model = WhisperModel(model_size, device="cuda", compute_type="int8_float16")
+        #model = WhisperModel(model_size_or_path, device="cuda", compute_type="int8_float16")
 
         # or run on CPU with INT8
         # tested: works, but slow, appx 10-times than cuda FP16
-#        model = WhisperModel(modelsize, device="cpu", compute_type="int8") #, download_root="faster-disk-cache-dir/")
+        model = WhisperModel(modelsize, device="cpu", compute_type="int8") #, download_root="faster-disk-cache-dir/") #COMBINAZIONE CHE FUNZIONA SUL MIO PC MN
         return model
-
+    
     def transcribe(self, audio, init_prompt=""):
         # tested: beam_size=5 is faster and better than 1 (on one 200 second document from En ESIC, min chunk 0.01)
         segments, info = self.model.transcribe(audio, language=self.original_language, initial_prompt=init_prompt, beam_size=5, word_timestamps=True, condition_on_previous_text=True, **self.transcribe_kargs)
@@ -281,7 +292,8 @@ class OnlineASRProcessor:
         print(">>>>COMPLETE NOW:",self.to_flush(o),file=self.logfile,flush=True)
         print("INCOMPLETE:",self.to_flush(self.transcript_buffer.complete()),file=self.logfile,flush=True)
 
-        # there is a newly confirmed text
+        # there is a newly confirmed textcheckplay = asr.
+            # if():
 
         if o and self.buffer_trimming_way == "sentence":  # trim the completed sentences
             if len(self.audio_buffer)/self.SAMPLING_RATE > self.buffer_trimming_sec:  # longer than this
@@ -291,7 +303,7 @@ class OnlineASRProcessor:
         if self.buffer_trimming_way == "segment":
             s = self.buffer_trimming_sec  # trim the completed segments longer than s,
         else:
-            s = 30 # if the audio buffer is longer than 30s, trim it
+            s = 10 # if the audio buffer is longer than 30s, trim it
         
         if len(self.audio_buffer)/self.SAMPLING_RATE > s:
             self.chunk_completed_segment(res)
@@ -345,9 +357,6 @@ class OnlineASRProcessor:
                 print(f"--- last segment not within commited area",file=self.logfile)
         else:
             print(f"--- not enough segments to chunk",file=self.logfile)
-
-
-
 
 
     def chunk_at(self, time):
@@ -454,7 +463,7 @@ def add_shared_args(parser):
     parser.add_argument('--lan', '--language', type=str, default='en', help="Language code for transcription, e.g. en,de,cs.")
     parser.add_argument('--task', type=str, default='transcribe', choices=["transcribe","translate"],help="Transcribe or translate.")
     parser.add_argument('--backend', type=str, default="faster-whisper", choices=["faster-whisper", "whisper_timestamped"],help='Load only this backend for Whisper processing.')
-    parser.add_argument('--vad', action="store_true", default=False, help='Use VAD = voice activity detection, with the default parameters.')
+    parser.add_argument('--vad', action="store_true", default=True, help='Use VAD = voice activity detection, with the default parameters.')
     parser.add_argument('--buffer_trimming', type=str, default="segment", choices=["sentence", "segment"],help='Buffer trimming strategy -- trim completed sentences marked with punctuation mark and detected by sentence segmenter, or the completed segments returned by Whisper. Sentence segmenter must be installed for "sentence" option.')
     parser.add_argument('--buffer_trimming_sec', type=float, default=15, help='Buffer trimming length threshold in seconds. If buffer length is longer, trimming sentence/segment is triggered.')
 
@@ -504,15 +513,15 @@ if __name__ == "__main__":
     else:
         tgt_language = language  # Whisper transcribes in this language
 
-
     e = time.time()
     print(f"done. It took {round(e-t,2)} seconds.",file=logfile)
 
     if args.vad:
         print("setting VAD filter",file=logfile)
         asr.use_vad()
+        
 
-    
+
     min_chunk = args.min_chunk_size
     if args.buffer_trimming == "sentence":
         tokenizer = create_tokenizer(tgt_language)
