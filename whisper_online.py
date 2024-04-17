@@ -33,6 +33,7 @@ class ASRBase:
         self.original_language = lan 
 
         self.model = self.load_model(modelsize, cache_dir, model_dir)
+        #self.use_vad_flag = False
 
     def load_model(self, modelsize, cache_dir):
         raise NotImplemented("must be implemented in the child class")
@@ -42,6 +43,8 @@ class ASRBase:
 
     def use_vad(self):
         raise NotImplemented("must be implemented in the child class")
+    
+    
 
 
 class WhisperTimestampedASR(ASRBase):
@@ -63,11 +66,11 @@ class WhisperTimestampedASR(ASRBase):
         if self.use_vad_flag:
             # Se il VAD è abilitato, utilizza il VAD per filtrare i segmenti di silenzio durante la trascrizione
             self.transcribe_kargs["vad"] = True
-            print("VAD_USED")
+            #print("VAD_USED")
         else:
             # Altrimenti, disabilita il VAD durante la trascrizione
             self.transcribe_kargs["vad"] = False
-            print("VAD_NOT_USED")
+            #print("VAD_NOT_USED")
 
         result = self.transcribe_timestamped(self.model,
                 audio, language=self.original_language,
@@ -223,7 +226,7 @@ class OnlineASRProcessor:
 
     SAMPLING_RATE = 16000
 
-    def __init__(self, asr, tokenizer=None, buffer_trimming=("segment", 15), logfile=sys.stderr):
+    def __init__(self, asr, tokenizer=None, buffer_trimming=("segment", 30), logfile=sys.stderr):
         """asr: WhisperASR object
         tokenizer: sentence tokenizer object for the target language. Must have a method *split* that behaves like the one of MosesTokenizer. It can be None, if "segment" buffer trimming option is used, then tokenizer is not used at all.
         ("segment", 15)
@@ -303,7 +306,7 @@ class OnlineASRProcessor:
         if self.buffer_trimming_way == "segment":
             s = self.buffer_trimming_sec  # trim the completed segments longer than s,
         else:
-            s = 10 # if the audio buffer is longer than 30s, trim it
+            s = 30 # if the audio buffer is longer than 30s, trim it
         
         if len(self.audio_buffer)/self.SAMPLING_RATE > s:
             self.chunk_completed_segment(res)
@@ -519,6 +522,8 @@ if __name__ == "__main__":
     if args.vad:
         print("setting VAD filter",file=logfile)
         asr.use_vad()
+    else:
+        asr.use_vad_flag = False
         
 
 
@@ -595,7 +600,7 @@ if __name__ == "__main__":
         end = 0
         while True:
             now = time.time() - start
-            if now < end+min_chunk:
+            if now < end+min_chunk: 
                 time.sleep(min_chunk+end-now)
             end = time.time() - start
             a = load_audio_chunk(audio_path,beg,end)
