@@ -623,3 +623,5 @@ if __name__ == "__main__":
 
     o = online.finish()
     output_transcript(o, now=now)
+    
+    # Test for git submodule
