@@ -272,7 +272,7 @@ Transition: If your project already uses WhisperStreaming, the transition to Sim
 
 Backends: WhisperStreaming still has an advantage of more backend options; faster-whisper, whisper_timestamped, OpenAI API, and mlx-whisper have more or less suitable requirements for many diverse users. SimulStreaming implements only one backend based on torch.
 
-Licence: WhisperStreaming is under the open MIT licence. SimulStreaming is dual licenced. It is free for non-commercial use, and affordable for commercial use.
+Licence: No difference. SimulStreaming changed the licence and is now under MIT.
 
 ## Contact
 
